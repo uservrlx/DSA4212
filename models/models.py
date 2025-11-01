@@ -61,21 +61,24 @@ class DecoderBlock(nn.Module):
     d_model: int
     n_heads: int
     mlp_ratio: int = 4
+    dropout: float = 0.1
 
     @nn.compact
-    def __call__(self, x, *, mask=None):
-        # Attention sublayer: Pre-LayerNorm -> Self-Attention -> Residual add
+    def __call__(self, x, *, mask=None, deterministic=True):
         h = nn.LayerNorm()(x)
         h = nn.SelfAttention(
             num_heads=self.n_heads,
             use_bias=False,
+            dropout_rate=self.dropout,
+            deterministic=deterministic
         )(h, mask=mask)
-        x = x + h  # residual connection
+        h = nn.Dropout(rate=self.dropout)(h, deterministic=deterministic)
+        x = x + h
 
-        # MLP sublayer: Pre-LayerNorm -> MLP -> Residual add
         h = nn.LayerNorm()(x)
         h = MLP(self.d_model, mlp_ratio=self.mlp_ratio)(h)
-        x = x + h  # residual connection
+        h = nn.Dropout(rate=self.dropout)(h, deterministic=deterministic)
+        x = x + h
         return x
 
 class DecoderOnlyTransformer(nn.Module):
@@ -105,6 +108,7 @@ class DecoderOnlyTransformer(nn.Module):
     n_heads: int
     max_len: int
     mlp_ratio: int = 4
+    dropout: float = 0.1
 
     def setup(self):
         # Token embedding table E with shape (V, D)
@@ -119,7 +123,7 @@ class DecoderOnlyTransformer(nn.Module):
         )
 
         # Stack of decoder blocks
-        self.blocks = [DecoderBlock(d_model=self.d_model, n_heads=self.n_heads, mlp_ratio=self.mlp_ratio) for _ in range(self.n_layers)]
+        self.blocks = [DecoderBlock(d_model=self.d_model, n_heads=self.n_heads, mlp_ratio=self.mlp_ratio, dropout=self.dropout) for _ in range(self.n_layers)]
 
         # Final LayerNorm before projecting to logits
         self.layerNorm_final = nn.LayerNorm()
